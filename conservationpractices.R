@@ -46,7 +46,7 @@ par(mar = c(2,0,1,1))
 plot(as.phylo(as.hclust(jactree)), main='simularity among practices', font=1, cex=0.84)
 
 dev.off()
-
+#----
 #summarize all practices
 dfp2 <- df[grepl('P',df[,2]),]
 dfp2agg <- aggregate(dfp2[,5:ncol(dfp2)], by=list(dfp2$Code), FUN = 'sum')
@@ -75,10 +75,39 @@ dfp2agg$practice <- rownames(dfp2agg)
 plotinputs3 <- merge(translanduse, dfp2agg, by='practice', all.x=TRUE, All.y=TRUE)
 rownames(plotinputs3) <- plotinputs3$practice
 plotinputs3 <- subset(plotinputs3, select = -c(practice))
-eudist <- as.data.frame(as.matrix(vegdist(plotinputs3[,7:ncol(plotinputs3)], method='euclidean', binary=FALSE, na.rm=T)))
-jacdist <- as.data.frame(as.matrix(vegdist(plotinputs3[,1:6], method='jaccard', binary=FALSE, na.rm=T)))
-disttotal <- (eudist/300 + jacdist)/2 #need to better normalize two matrices
-tree3 <- agnes(disttotal, method='average')
+plotinputs3 <- as.data.frame(scale(plotinputs3, center = FALSE, scale = TRUE)) #normalize each column
+
+eudist <- as.data.frame(as.matrix(vegdist(plotinputs3[,1:ncol(plotinputs3)], method='euclidean', binary=FALSE, na.rm=T)))
+#jacdist <- as.data.frame(as.matrix(vegdist(plotinputs3[,1:6], method='jaccard', binary=FALSE, na.rm=T)))
+#disttotal <- (eudist/40 + jacdist)/2 #need to better normalize two matrices
+tree3 <- agnes(eudist, method='average')
+
+ngroups <- 8
+
+groups <- cutree(tree3, k = ngroups)
+
+Code <- names(groups)
+clust <- unname(groups)
+groupdf <- as.data.frame(cbind(Code, clust))
+groupdf$clust <- (as.numeric(as.character(groupdf$clust)))
+maxcluster <- max(groupdf$clust)
+numberzeros <- nrow(groupdf[(groupdf$clust == 0),])
+whichrecords <- which(groupdf$clust == 0)
+if (nrow(groupdf[groupdf$clust == 0,]) != 0){
+  for (i in 1:numberzeros){ #assign all zero clusters to unique cluster number.
+    groupdf[whichrecords[i],]$clust <- maxcluster+i}}
+
+newlabels <- tree3$order.lab
+newlabels <- as.data.frame(newlabels)
+newlabels$row <- row(newlabels)
+newlabels <- merge(newlabels, groupdf, by.x='newlabels', by.y ='Code')
+newlabels$newlabels <- paste(newlabels$clust, newlabels$newlabels)
+newlabels <- newlabels[order(newlabels$row),1]
+newtree <- tree3
+newtree$order.lab <- newlabels
+
+dend1 <- color_branches(as.hclust(newtree), k = ngroups)
+dend1 <- color_labels(dend1, k = ngroups)
 
 filename <- "output/practicelandusetree.png"
 w <- 800
@@ -86,7 +115,14 @@ h <- nrow(plotinputs3)*12+80
 u <- 12
 png(filename=filename,width = w, height = h, units = "px", pointsize = u)
 
-par(mar = c(2,0,1,1))
-plot(as.phylo(as.hclust(tree3)), main='simularity among practices', font=1, cex=0.84)
+par(mar = c(2,0,1,2))
+plot(dend1,  horiz = TRUE, main='simularity among practices', font=1, cex=0.84)
 
 dev.off()
+#----
+#export groups
+forexport <- merge(groupdf, unique(df[,3:4]), by='Code')
+plotinputs3$Code <- rownames(plotinputs3)
+forexport <- merge(forexport, plotinputs3, by='Code')
+
+write.csv(forexport, 'output/groups.csv', row.names = FALSE)
